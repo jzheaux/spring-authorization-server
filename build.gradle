@@ -33,6 +33,12 @@ repositories {
 
 dependencyManagementExport.projects = subprojects.findAll { !it.name.contains('-boot') }
 
+allprojects {
+	repositories {
+		mavenLocal()
+	}
+}
+
 subprojects {
 	plugins.withType(JavaPlugin) {
 		project.sourceCompatibility = "1.8"

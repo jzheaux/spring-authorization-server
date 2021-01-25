@@ -23,6 +23,7 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 import org.springframework.security.oauth2.jwt.JoseHeader;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.jwt.JwsSignerFactory;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -63,6 +64,18 @@ class OAuth2TokenIssuerUtil {
 		return jwtEncoder.encode(joseHeader, jwtClaimsSet);
 	}
 
+	static Jwt issueJwtAccessToken(JwsSignerFactory factory, String subject, String audience, Set<String> scopes, Duration tokenTimeToLive) {
+		String issuer = "http://auth-server:9000";		// TODO Allow configuration for issuer claim
+		// I like that this is more succinct
+		return factory.signer()
+				.audience(Collections.singletonList(audience))
+				.expiresAt((issuedAt) -> issuedAt.plus(tokenTimeToLive))
+				.issuer(issuer)
+				.subject(subject)
+				.claim(OAuth2ParameterNames.SCOPE, scopes)
+				.sign();
+	}
+
 	static Jwt issueIdToken(JwtEncoder jwtEncoder, String subject, String audience, String nonce) {
 		JoseHeader joseHeader = JoseHeader.withAlgorithm(SignatureAlgorithm.RS256).build();
 
@@ -86,6 +99,24 @@ class OAuth2TokenIssuerUtil {
 		JwtClaimsSet jwtClaimsSet = builder.build();
 
 		return jwtEncoder.encode(joseHeader, jwtClaimsSet);
+	}
+
+	static Jwt issueIdToken(JwsSignerFactory factory, String subject, String audience, String nonce) {
+		String issuer = "http://auth-server:9000";		// TODO Allow configuration for issuer claim
+		Jwt.JwsSpec<?> spec = factory.signer()
+				.audience(Collections.singletonList(audience))
+				.expiresAt((issuedAt) -> issuedAt.plus(30, ChronoUnit.MINUTES))
+				.issuer(issuer)
+				.subject(subject)
+				.claim(IdTokenClaimNames.AZP, audience);
+
+		if (StringUtils.hasText(nonce)) {
+			spec.claim(IdTokenClaimNames.NONCE, nonce);
+		}
+
+		// TODO Add 'auth_time' claim
+
+		return spec.sign();
 	}
 
 	static OAuth2RefreshToken issueRefreshToken(Duration tokenTimeToLive) {

@@ -35,8 +35,10 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.web.HttpSecurityBuilder;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.annotation.web.configurers.ExceptionHandlingConfigurer;
+import org.springframework.security.oauth2.jwt.JwsSignerFactory;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwsEncoder;
+import org.springframework.security.oauth2.jwt.NimbusJwsSignerFactory;
 import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeAuthenticationProvider;
@@ -159,24 +161,25 @@ public final class OAuth2AuthorizationServerConfigurer<B extends HttpSecurityBui
 						getAuthorizationService(builder));
 		builder.authenticationProvider(postProcess(clientAuthenticationProvider));
 
-		JwtEncoder jwtEncoder = getJwtEncoder(builder);
+		JwsSignerFactory jwsSignerFactory = getJwsSignerFactory(builder);
+		//JwtEncoder jwtEncoder = getJwtEncoder(builder);
 
 		OAuth2AuthorizationCodeAuthenticationProvider authorizationCodeAuthenticationProvider =
 				new OAuth2AuthorizationCodeAuthenticationProvider(
 						getAuthorizationService(builder),
-						jwtEncoder);
+						jwsSignerFactory);
 		builder.authenticationProvider(postProcess(authorizationCodeAuthenticationProvider));
 
 		OAuth2RefreshTokenAuthenticationProvider refreshTokenAuthenticationProvider =
 				new OAuth2RefreshTokenAuthenticationProvider(
 						getAuthorizationService(builder),
-						jwtEncoder);
+						jwsSignerFactory);
 		builder.authenticationProvider(postProcess(refreshTokenAuthenticationProvider));
 
 		OAuth2ClientCredentialsAuthenticationProvider clientCredentialsAuthenticationProvider =
 				new OAuth2ClientCredentialsAuthenticationProvider(
 						getAuthorizationService(builder),
-						jwtEncoder);
+						jwsSignerFactory);
 		builder.authenticationProvider(postProcess(clientCredentialsAuthenticationProvider));
 
 		OAuth2TokenRevocationAuthenticationProvider tokenRevocationAuthenticationProvider =
@@ -276,15 +279,15 @@ public final class OAuth2AuthorizationServerConfigurer<B extends HttpSecurityBui
 		return authorizationService;
 	}
 
-	private static <B extends HttpSecurityBuilder<B>> JwtEncoder getJwtEncoder(B builder) {
-		JwtEncoder jwtEncoder = builder.getSharedObject(JwtEncoder.class);
+	private static <B extends HttpSecurityBuilder<B>> JwsSignerFactory getJwsSignerFactory(B builder) {
+		JwsSignerFactory jwtEncoder = builder.getSharedObject(JwsSignerFactory.class);
 		if (jwtEncoder == null) {
-			jwtEncoder = getOptionalBean(builder, JwtEncoder.class);
+			jwtEncoder = getOptionalBean(builder, JwsSignerFactory.class);
 			if (jwtEncoder == null) {
 				JWKSource<SecurityContext> jwkSource = getJwkSource(builder);
-				jwtEncoder = new NimbusJwsEncoder(jwkSource);
+				jwtEncoder = new NimbusJwsSignerFactory(jwkSource);
 			}
-			builder.setSharedObject(JwtEncoder.class, jwtEncoder);
+			builder.setSharedObject(JwsSignerFactory.class, jwtEncoder);
 		}
 		return jwtEncoder;
 	}

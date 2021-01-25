@@ -15,9 +15,15 @@
  */
 package org.springframework.security.oauth2.server.authorization.authentication;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Set;
+
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
+
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -28,11 +34,11 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames;
-import org.springframework.security.oauth2.jwt.JoseHeaderNames;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.jwt.JoseHeaderNames;
+import org.springframework.security.oauth2.jwt.JwsSignerFactory;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtClaimsSet;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.TestJwsSpecs;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationAttributeNames;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
@@ -44,16 +50,11 @@ import org.springframework.security.oauth2.server.authorization.token.OAuth2Auth
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenMetadata;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2Tokens;
 
-import java.time.Duration;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.Set;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.entry;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.willReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -68,13 +69,13 @@ import static org.mockito.Mockito.when;
 public class OAuth2AuthorizationCodeAuthenticationProviderTests {
 	private static final String AUTHORIZATION_CODE = "code";
 	private OAuth2AuthorizationService authorizationService;
-	private JwtEncoder jwtEncoder;
+	private JwsSignerFactory jwtEncoder;
 	private OAuth2AuthorizationCodeAuthenticationProvider authenticationProvider;
 
 	@Before
 	public void setUp() {
 		this.authorizationService = mock(OAuth2AuthorizationService.class);
-		this.jwtEncoder = mock(JwtEncoder.class);
+		this.jwtEncoder = mock(JwsSignerFactory.class);
 		this.authenticationProvider = new OAuth2AuthorizationCodeAuthenticationProvider(
 				this.authorizationService, this.jwtEncoder);
 	}
@@ -220,18 +221,17 @@ public class OAuth2AuthorizationCodeAuthenticationProviderTests {
 		OAuth2AuthorizationCodeAuthenticationToken authentication =
 				new OAuth2AuthorizationCodeAuthenticationToken(AUTHORIZATION_CODE, clientPrincipal, authorizationRequest.getRedirectUri(), null);
 
-		when(this.jwtEncoder.encode(any(), any())).thenReturn(createJwt());
+		willReturn(TestJwsSpecs.jwsSpec()).given(this.jwtEncoder).signer();
 
 		OAuth2AccessTokenAuthenticationToken accessTokenAuthentication =
 				(OAuth2AccessTokenAuthenticationToken) this.authenticationProvider.authenticate(authentication);
 
-		ArgumentCaptor<JwtClaimsSet> jwtClaimsSetCaptor = ArgumentCaptor.forClass(JwtClaimsSet.class);
-		verify(this.jwtEncoder).encode(any(), jwtClaimsSetCaptor.capture());
-		JwtClaimsSet jwtClaimsSet = jwtClaimsSetCaptor.getValue();
+		verify(this.jwtEncoder).signer();
+		Jwt jwt = this.jwtEncoder.signer().sign();
 
-		Set<String> scopes = jwtClaimsSet.getClaim(OAuth2ParameterNames.SCOPE);
+		Set<String> scopes = jwt.getClaim(OAuth2ParameterNames.SCOPE);
 		assertThat(scopes).isEqualTo(authorization.getAttribute(OAuth2AuthorizationAttributeNames.AUTHORIZED_SCOPES));
-		assertThat(jwtClaimsSet.getSubject()).isEqualTo(authorization.getPrincipalName());
+		assertThat(jwt.getSubject()).isEqualTo(authorization.getPrincipalName());
 
 		ArgumentCaptor<OAuth2Authorization> authorizationCaptor = ArgumentCaptor.forClass(OAuth2Authorization.class);
 		verify(this.authorizationService).save(authorizationCaptor.capture());
@@ -259,12 +259,12 @@ public class OAuth2AuthorizationCodeAuthenticationProviderTests {
 		OAuth2AuthorizationCodeAuthenticationToken authentication =
 				new OAuth2AuthorizationCodeAuthenticationToken(AUTHORIZATION_CODE, clientPrincipal, authorizationRequest.getRedirectUri(), null);
 
-		when(this.jwtEncoder.encode(any(), any())).thenReturn(createJwt());
+		willReturn(TestJwsSpecs.jwsSpec()).given(this.jwtEncoder).signer();
 
 		OAuth2AccessTokenAuthenticationToken accessTokenAuthentication =
 				(OAuth2AccessTokenAuthenticationToken) this.authenticationProvider.authenticate(authentication);
 
-		verify(this.jwtEncoder, times(2)).encode(any(), any());		// Access token and ID Token
+		verify(this.jwtEncoder, times(2)).signer();		// Access token and ID Token
 
 		ArgumentCaptor<OAuth2Authorization> authorizationCaptor = ArgumentCaptor.forClass(OAuth2Authorization.class);
 		verify(this.authorizationService).save(authorizationCaptor.capture());
@@ -304,7 +304,9 @@ public class OAuth2AuthorizationCodeAuthenticationProviderTests {
 
 		Instant accessTokenIssuedAt = Instant.now();
 		Instant accessTokenExpiresAt = accessTokenIssuedAt.plus(accessTokenTTL);
-		when(this.jwtEncoder.encode(any(), any())).thenReturn(createJwt(accessTokenIssuedAt, accessTokenExpiresAt));
+		willReturn(TestJwsSpecs.jwsSpec()
+			.issuedAt(accessTokenIssuedAt)
+			.expiresAt(accessTokenExpiresAt)).given(this.jwtEncoder).signer();
 
 		OAuth2AccessTokenAuthenticationToken accessTokenAuthentication =
 				(OAuth2AccessTokenAuthenticationToken) this.authenticationProvider.authenticate(authentication);
@@ -340,7 +342,7 @@ public class OAuth2AuthorizationCodeAuthenticationProviderTests {
 		OAuth2AuthorizationCodeAuthenticationToken authentication =
 				new OAuth2AuthorizationCodeAuthenticationToken(AUTHORIZATION_CODE, clientPrincipal, authorizationRequest.getRedirectUri(), null);
 
-		when(this.jwtEncoder.encode(any(), any())).thenReturn(createJwt());
+		willReturn(TestJwsSpecs.jwsSpec()).given(this.jwtEncoder).signer();
 
 		OAuth2AccessTokenAuthenticationToken accessTokenAuthentication =
 				(OAuth2AccessTokenAuthenticationToken) this.authenticationProvider.authenticate(authentication);

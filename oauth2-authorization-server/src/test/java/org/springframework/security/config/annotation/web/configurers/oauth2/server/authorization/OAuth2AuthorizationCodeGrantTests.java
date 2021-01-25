@@ -18,7 +18,7 @@ package org.springframework.security.config.annotation.web.configurers.oauth2.se
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
@@ -41,10 +41,9 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationResp
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
 import org.springframework.security.oauth2.jose.TestJwks;
-import org.springframework.security.oauth2.jwt.JoseHeader;
-import org.springframework.security.oauth2.jwt.JwtClaimsSet;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.NimbusJwsEncoder;
+import org.springframework.security.oauth2.jwt.JwsSignerFactory;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.NimbusJwsSignerFactory;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.TestOAuth2Authorizations;
@@ -94,8 +93,8 @@ public class OAuth2AuthorizationCodeGrantTests {
 	private static RegisteredClientRepository registeredClientRepository;
 	private static OAuth2AuthorizationService authorizationService;
 	private static JWKSource<SecurityContext> jwkSource;
-	private static NimbusJwsEncoder jwtEncoder;
-	private static BiConsumer<JoseHeader.Builder, JwtClaimsSet.Builder> jwtCustomizer;
+	private static NimbusJwsSignerFactory jwtEncoder;
+	private static Consumer<Jwt.JwsSpec<?>> jwtCustomizer;
 
 	@Rule
 	public final SpringTestRule spring = new SpringTestRule();
@@ -109,8 +108,8 @@ public class OAuth2AuthorizationCodeGrantTests {
 		authorizationService = mock(OAuth2AuthorizationService.class);
 		JWKSet jwkSet = new JWKSet(TestJwks.DEFAULT_RSA_JWK);
 		jwkSource = (jwkSelector, securityContext) -> jwkSelector.select(jwkSet);
-		jwtEncoder = new NimbusJwsEncoder(jwkSource);
-		jwtCustomizer = mock(BiConsumer.class);
+		jwtEncoder = new NimbusJwsSignerFactory(jwkSource);
+		jwtCustomizer = mock(Consumer.class);
 		jwtEncoder.setJwtCustomizer(jwtCustomizer);
 	}
 
@@ -256,7 +255,7 @@ public class OAuth2AuthorizationCodeGrantTests {
 				.header(HttpHeaders.AUTHORIZATION, "Basic " + encodeBasicAuth(
 						registeredClient.getClientId(), registeredClient.getClientSecret())));
 
-		verify(jwtCustomizer).accept(any(JoseHeader.Builder.class), any(JwtClaimsSet.Builder.class));
+		verify(jwtCustomizer).accept(any(Jwt.JwsSpec.class));
 	}
 
 	private static MultiValueMap<String, String> getAuthorizationRequestParameters(RegisteredClient registeredClient) {
@@ -312,7 +311,7 @@ public class OAuth2AuthorizationCodeGrantTests {
 	static class AuthorizationServerConfigurationWithJwtEncoder extends AuthorizationServerConfiguration {
 
 		@Bean
-		JwtEncoder jwtEncoder() {
+		JwsSignerFactory jwtEncoder() {
 			return jwtEncoder;
 		}
 	}
